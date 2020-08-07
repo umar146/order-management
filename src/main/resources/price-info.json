@@ -1,0 +1,30 @@
+[
+  {
+    "name": "apple",
+    "available": 50,
+    "price": 0.6,
+    "offers": {
+    }
+  },
+  {
+    "name": "orange",
+    "available": 100,
+    "price": 0.25,
+    "offers": {
+    }
+  },
+  {
+    "name": "pineapple",
+    "available": 30,
+    "price": 1.0,
+    "offers": {
+    }
+  },
+  {
+    "name": "melon",
+    "available": 50,
+    "price": 0.5,
+    "offers": {
+    }
+  }
+]
