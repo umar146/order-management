@@ -5,9 +5,12 @@ import com.coding.task.order.beans.OrderResponseBean
 import com.coding.task.order.service.OrderManagementService
 import com.coding.task.order.stubs.CustomerInfoService
 import com.coding.task.order.stubs.InventoryDetailsService
+import com.coding.task.order.stubs.OfferDetailsService
+import org.apache.kafka.clients.producer.KafkaProducer
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Service
 
 @Service
@@ -29,6 +32,17 @@ class OrderManagementServiceImpl : OrderManagementService {
      */
     @Autowired
     private lateinit var inventoryService: InventoryDetailsService
+
+    /**
+     * Inventory Details Service
+     */
+    @Autowired
+    private lateinit var offerDetailsService: OfferDetailsService
+
+    /**
+     *
+     */
+    val topic: String = "test_topic"
 
     /**
      * For placing the order for the given request
@@ -53,22 +67,76 @@ class OrderManagementServiceImpl : OrderManagementService {
                 else -> logger.info("Order Request is valid. Proceeding further to place the order.")
             }
 
-            var totalAmount: Double = 0.0;
+            var totalAmount = 0.0;
+
+            var itemDetails: HashMap<String?, Int?> = HashMap<String?, Int?>()
+
+            // Populate the Response Information
+            response.name = request?.name
+
+
+
 
             for (item in request!!.items!!) {
-
-                // Invoke the item from the inventory
-                val bean = inventoryService.fetchItemByName(item.toLowerCase());
-
-                totalAmount += bean!!.price!!;
+                if (itemDetails[item] != null) {
+                    itemDetails.put(item, itemDetails[item]?.plus(1))
+                } else {
+                    itemDetails.put(item, 1)
+                }
             }
 
-            response.name = request.name
+            for (item in itemDetails) {
+
+                // Invoke the item from the inventory
+                val bean = inventoryService.fetchItemByName(item.key?.toLowerCase());
+
+                if (bean != null) {
+
+                    var itemCount = item.value;
+                    var discountedItemCount: Float = 0F
+
+                    if (bean.offerId != null) {
+
+                        var offerDetails = offerDetailsService.fetchOfferById(bean.offerId)
+
+                        when (offerDetails?.id) {
+                            1 -> {
+                                discountedItemCount = ((itemCount?.div(2) ?:0) + itemCount?.rem(2)!!).toFloat()
+                            }
+                            2 -> {
+                                discountedItemCount = ((itemCount?.div(3) ?:0) * 2 + itemCount?.rem(3)!!).toFloat()
+                            }
+                            3 -> {
+                                discountedItemCount = itemCount?.div(10)?.times(100f) ?: 0F
+                            }
+                            4 -> {
+                                discountedItemCount = itemCount?.div(50)?.times(100f) ?: 0F
+                            }
+                            else -> {
+                                discountedItemCount = itemCount?.times(1F)!!
+                            }
+                        }
+                    }
+
+                    totalAmount += bean!!.price!! * discountedItemCount!!;
+                } else {
+
+                    response.status = "Failed"
+                    response.message = "Order placement failed. Following items are not " +
+                            "available as requested: " + item.key
+
+                    logger.info(response.message);
+
+                    return response
+                }
+            }
+
             response.status = "Completed"
             response.message = "Order placed successfully. Total amount is $$totalAmount"
             response.totalAmount = totalAmount
 
             logger.info("Order placed successfully. Total amount is {}", totalAmount);
+
 
         } catch (e: Exception) {
 

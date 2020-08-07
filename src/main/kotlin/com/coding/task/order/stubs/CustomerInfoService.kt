@@ -43,7 +43,6 @@ class CustomerInfoService {
      * Method for fetching all the customers
      */
     fun fetchCustomers(): HashMap<Int?, CustomerInfoBean> {
-        logger.info("Fetching all the customers")
         return customerInfo
     }
 
@@ -51,7 +50,6 @@ class CustomerInfoService {
      * Method for fetching the customer for the given customer id.
      */
     fun fetchCustomerById(customerId: Int?): CustomerInfoBean? {
-        logger.info("Fetching the customer by id - {}", customerId)
         return customerInfo.get(customerId)
     }
 }

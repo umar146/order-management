@@ -1,0 +1,22 @@
+[
+  {
+    "id" : 1,
+    "name": "BOGO",
+    "description": "Buy One & Get One offer"
+  },
+  {
+    "id" : 2,
+    "name": "B3C2",
+    "description": "Buy three for the price of two"
+  },
+  {
+    "id" : 3,
+    "name": "10DISCOUNT",
+    "description": "Buys items with 10% discount"
+  },
+  {
+    "id" : 4,
+    "name": "50DISCOUNT",
+    "description": "Buys items with 50% discount"
+  }
+]

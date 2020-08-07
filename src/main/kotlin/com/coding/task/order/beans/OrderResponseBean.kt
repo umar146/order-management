@@ -7,4 +7,5 @@ import com.google.gson.JsonObject
  */
 data class OrderResponseBean(var name: String? = null, var items: JsonObject? = null,
                              var status: String? = null, var totalAmount: Double? = null,
+                             var offerName: String? = null, var offerDescription: Double? = null,
                              var message: String? = null, var totalItems: Int? = null)

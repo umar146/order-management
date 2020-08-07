@@ -3,28 +3,29 @@
     "name": "apple",
     "available": 50,
     "price": 0.6,
-    "offers": {
-    }
+    "offerId": 1
   },
   {
     "name": "orange",
     "available": 100,
     "price": 0.25,
-    "offers": {
-    }
+    "offerId": 2
   },
   {
     "name": "pineapple",
     "available": 30,
     "price": 1.0,
-    "offers": {
-    }
+    "offerId": 1
+  },
+  {
+    "name": "melon",
+    "available": 50,
+    "price": 0.5
   },
   {
     "name": "melon",
     "available": 50,
     "price": 0.5,
-    "offers": {
-    }
+    "offerId": null
   }
 ]
