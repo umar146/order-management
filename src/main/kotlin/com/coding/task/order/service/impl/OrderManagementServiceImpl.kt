@@ -2,15 +2,21 @@ package com.coding.task.order.service.impl
 
 import com.coding.task.order.beans.OrderRequestBean
 import com.coding.task.order.beans.OrderResponseBean
+import com.coding.task.order.constants.OrderServiceConstants.Companion.QUEUE_NAME
+import com.coding.task.order.constants.OrderServiceConstants.Companion.ROUTING_KEY_USER_IMPORTANT_INFO
+import com.coding.task.order.constants.OrderServiceConstants.Companion.TOPIC_EXCHANGE_NAME
 import com.coding.task.order.service.OrderManagementService
 import com.coding.task.order.stubs.CustomerInfoService
 import com.coding.task.order.stubs.InventoryDetailsService
 import com.coding.task.order.stubs.OfferDetailsService
-import org.apache.kafka.clients.producer.KafkaProducer
+import com.google.gson.Gson
+import com.rabbitmq.client.Channel
+import com.rabbitmq.client.Connection
+import com.rabbitmq.client.ConnectionFactory
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 
 @Service
@@ -40,9 +46,29 @@ class OrderManagementServiceImpl : OrderManagementService {
     private lateinit var offerDetailsService: OfferDetailsService
 
     /**
-     *
+     * RabbitMQ Host Name
      */
-    val topic: String = "test_topic"
+    @Value("\${spring.rabbitmq.host}")
+    var hostname: String? = null
+
+    /**
+     * RabbitMQ Port
+     */
+    @Value("\${spring.rabbitmq.port}")
+    var port: String? = null
+
+    /**
+     * RabbitMQ User Name
+     */
+    @Value("\${spring.rabbitmq.username}")
+    var username: String? = null
+
+    /**
+     * RabbitMQ Password
+     */
+    @Value("\${spring.rabbitmq.password}")
+    private val password: String? = null
+
 
     /**
      * For placing the order for the given request
@@ -58,53 +84,96 @@ class OrderManagementServiceImpl : OrderManagementService {
 
         try {
 
-            // Validate the order request
-            when (validateInput(request)) {
-                1 -> throw Exception("Error while placing the order - Request not valid.")
-                2 -> throw Exception("Error while placing the order - Customer Information not valid.")
-                3 -> throw Exception("Error while placing the order - Name not valid.")
-                4 -> throw Exception("Error while placing the order - Input is not valid.")
-                else -> logger.info("Order Request is valid. Proceeding further to place the order.")
-            }
-
-            var totalAmount = 0.0;
-
-            var itemDetails: HashMap<String?, Int?> = HashMap<String?, Int?>()
-
             // Populate the Response Information
             response.name = request?.name
 
+            var isValid = true
+            var validationMsg: String = ""
+            val gson = Gson()
 
+            // Fetch & Populate the Customer details in the response
+            var customerInfo = customerService.fetchCustomerById(request!!.customerId)
+            response.customer = customerInfo
 
-
-            for (item in request!!.items!!) {
-                if (itemDetails[item] != null) {
-                    itemDetails.put(item, itemDetails[item]?.plus(1))
-                } else {
-                    itemDetails.put(item, 1)
+            // Validate the order request
+            when (validateInput(request)) {
+                1 -> {
+                    isValid = false
+                    validationMsg = ("Error while placing the order - Request not valid.")
+                }
+                2 -> {
+                    isValid = false
+                    validationMsg = ("Error while placing the order - Customer Information not valid.")
+                }
+                3 -> {
+                    isValid = false
+                    validationMsg = ("Error while placing the order - Name not valid.")
+                }
+                4 -> {
+                    isValid = false
+                    validationMsg = ("Error while placing the order - Input is not valid.")
+                }
+                else -> {
+                    isValid = true
                 }
             }
 
+            if (!isValid) {
+
+                response.status = "Failed"
+                response.message = validationMsg
+
+                logger.info(response.message)
+
+                // Publish to RabbitMQ
+                /**
+                 * Step 3: Publishing the order details to the Customer via MQ. Here I've used the RabbitMQ
+                 */
+                rabbitSender(gson.toJson(response).toString())
+                return response
+            }
+
+            // For calculating the total amount
+            var totalAmount = 0.0
+
+            // Defining immutable item details map
+            val itemDetails: HashMap<String?, Int?> = HashMap()
+
+
+            // Iterate the order requested items & calculate the requested count
+            for (item in request!!.items!!) {
+                if (itemDetails[item] != null) {
+                    itemDetails[item] = itemDetails[item]?.plus(1)
+                } else {
+                    itemDetails[item] = 1
+                }
+            }
+
+            // Iterate the item details & process the order
             for (item in itemDetails) {
 
                 // Invoke the item from the inventory
-                val bean = inventoryService.fetchItemByName(item.key?.toLowerCase());
+                val bean = inventoryService.fetchItemByName(item.key?.toLowerCase())
 
+                // Check whether the requested item is available in inventory
                 if (bean != null) {
 
-                    var itemCount = item.value;
-                    var discountedItemCount: Float = 0F
+                    var itemCount = item.value
+                    var discountedItemCount = 0F
 
+                    // Check whether the item has any offers
                     if (bean.offerId != null) {
 
+                        // Fetch the Offer details
                         var offerDetails = offerDetailsService.fetchOfferById(bean.offerId)
 
+                        // Process the offers & ajust the calculations
                         when (offerDetails?.id) {
                             1 -> {
-                                discountedItemCount = ((itemCount?.div(2) ?:0) + itemCount?.rem(2)!!).toFloat()
+                                discountedItemCount = ((itemCount?.div(2) ?: 0) + itemCount?.rem(2)!!).toFloat()
                             }
                             2 -> {
-                                discountedItemCount = ((itemCount?.div(3) ?:0) * 2 + itemCount?.rem(3)!!).toFloat()
+                                discountedItemCount = ((itemCount?.div(3) ?: 0) * 2 + itemCount?.rem(3)!!).toFloat()
                             }
                             3 -> {
                                 discountedItemCount = itemCount?.div(10)?.times(100f) ?: 0F
@@ -118,15 +187,20 @@ class OrderManagementServiceImpl : OrderManagementService {
                         }
                     }
 
-                    totalAmount += bean!!.price!! * discountedItemCount!!;
+                    totalAmount += bean!!.price!! * discountedItemCount
                 } else {
 
                     response.status = "Failed"
                     response.message = "Order placement failed. Following items are not " +
                             "available as requested: " + item.key
 
-                    logger.info(response.message);
+                    logger.info(response.message)
 
+                    // Publish to RabbitMQ
+                    /**
+                     * Step 3: Publishing the order details to the Customer via MQ. Here I've used the RabbitMQ
+                     */
+                    rabbitSender(gson.toJson(response).toString())
                     return response
                 }
             }
@@ -134,11 +208,19 @@ class OrderManagementServiceImpl : OrderManagementService {
             response.status = "Completed"
             response.message = "Order placed successfully. Total amount is $$totalAmount"
             response.totalAmount = totalAmount
+            response.estimatedDelivery = "Within 2-3 days"
 
-            logger.info("Order placed successfully. Total amount is {}", totalAmount);
+            // Publish to RabbitMQ
+            /**
+             * Step 3: Publishing the order details to the Customer via MQ. Here I've used the RabbitMQ
+             */
+            rabbitSender(gson.toJson(response).toString())
+            logger.info("Order placed successfully. Total amount is {}", totalAmount)
 
 
         } catch (e: Exception) {
+
+            e.printStackTrace()
 
             // Log & throw the exception
             if (request != null) {
@@ -154,7 +236,7 @@ class OrderManagementServiceImpl : OrderManagementService {
 
     /**
      * For placing the order for the given request
-     * @param items
+     * @param args
      * @return
      * @throws Exception
      */
@@ -163,16 +245,18 @@ class OrderManagementServiceImpl : OrderManagementService {
 
         // Initialize the request
         val request = OrderRequestBean()
-        val items: ArrayList<String> = ArrayList<String>()
+        val items: ArrayList<String> = ArrayList()
         for (item in args!!) {
-            items.add(item)
+            if (item.trim().isNotEmpty()) {
+                items.add(item)
+            }
         }
         request.name = "Sample Order"
         request.customerId = 1
         request.items = items
 
         // Invoke the place order operation
-        return this.placeOrder(request);
+        return this.placeOrder(request)
     }
 
     /**
@@ -202,5 +286,30 @@ class OrderManagementServiceImpl : OrderManagementService {
 
         // Return '-1' when there is no problem in the input request
         return -1
+    }
+
+    /**
+     * Function which will send the trasnfer the message to the RabbitMQ topic
+     */
+    @Throws(Exception::class)
+    fun rabbitSender(payload: String) {
+
+        try {
+            val factory = ConnectionFactory()
+            factory.setUri("amqp://$username:$password@$hostname:$port")
+            factory.virtualHost = "/"
+            factory.isAutomaticRecoveryEnabled = true
+
+            val connection: Connection = factory.newConnection()
+            val channel: Channel = connection.createChannel()
+
+            channel.queueDeclare(QUEUE_NAME, false, false, false, null)
+            channel.basicPublish(TOPIC_EXCHANGE_NAME, ROUTING_KEY_USER_IMPORTANT_INFO, null, payload.toByteArray())
+
+            channel.close()
+            connection.close()
+        } catch (e: Exception){
+            logger.error("Unabled to connect to MQ Server.")
+        }
     }
 }
