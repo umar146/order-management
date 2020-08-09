@@ -9,3 +9,8 @@ Following steps are covered as part of this project,
 3. Integrating Customer Notification - which notifies the customer on the status of the received orders
 4. Managing the stocks - which can handle & notify the users about the stock details of the requested item.
 
+# How to build
+
+This project sould be built using Apache Maven Build Tool. Check out the repostiroy, and run the below maven command to build this project 
+
+    > mvn clean install
