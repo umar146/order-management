@@ -187,6 +187,23 @@ class OrderManagementServiceImpl : OrderManagementService {
                         }
                     }
 
+                    /**
+                     * Step 4: Handling the scenario where stocks which can be out
+                     */
+                    if (itemCount!! > bean.available!!) {
+
+                        response.status = "Failed"
+                        response.message = "Order placement failed. Following items are not " +
+                                "available for the requested quantity: " + item.key + ". Requested: " + itemCount + " Available: " + bean.available
+
+                        logger.info(response.message)
+
+                        // Publish to RabbitMQ
+                        rabbitSender(gson.toJson(response).toString())
+                        return response
+
+                    }
+
                     totalAmount += bean!!.price!! * discountedItemCount
                 } else {
 
